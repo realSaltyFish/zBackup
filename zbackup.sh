@@ -205,6 +205,17 @@ function cleanSnapshots()
 
 function main()
 {
+  unset_vars
+  case $1 in
+    "-h"|"--help")
+      _help
+      ;;
+    "--version")
+      _version
+      ;;
+  esac
+  printHeader HELLO
+  _setArgs $@
   if [ $FS ]
   then
     DATASETS=$(printf "%s " "${FS[@]}")
@@ -228,6 +239,7 @@ function main()
   then
     cleanSnapshots
   fi
+  printHeader BYE
 }
 
 
@@ -270,7 +282,7 @@ function _setArgs(){
         if [ ! -d $STORAGE ]
         then
           echo Invalid backup storage position.
-          exit 1
+          _exit 1
         fi
         ;;
       "-u" | "--upload")
@@ -279,7 +291,7 @@ function _setArgs(){
         if [ -z $(echo $DEST | grep -P '\w+:(\w+\/?)+') ]
         then
           echo Invalid upload destination $DEST.
-          exit 1
+          _exit 1
         fi
         ;;
       "-c" | "--clean")
@@ -294,7 +306,7 @@ function _setArgs(){
           echo Specified date $TODAY.
         else
           echo Invalid date $TODAY. Use 8 digits to represent a date, e.g. 20201123
-          exit 1
+          _exit 1
         fi
         ;;
       "-y" | "--yes")
@@ -306,7 +318,7 @@ function _setArgs(){
   if [ -z $POOL ] && [ -z $FS ]
   then
     echo Please specify a pool or dataset to operate on. Use -h or --help for help.
-    exit 1
+    _exit 1
   fi
   if [ $FS ] && [ $POOL ]
   then
@@ -315,8 +327,22 @@ function _setArgs(){
   if ([ $DEST ] || [ $DO_EXPORT ]) && [ -z $STORAGE ]
   then
     echo Please specify the location of backup files for exporting/uploading.
-    exit 1
+    _exit 1
   fi
+}
+
+
+function unset_vars()
+{
+  unset AUTO_CONFIRM
+  unset DEST
+  unset STORAGE
+  unset FS
+  unset POOL
+  unset DO_EXPORT
+  unset DO_SNAPSHOT
+  unset DATASETS
+  unset DATASET
 }
 
 
@@ -341,7 +367,11 @@ function _version()
 }
 
 
-printHeader HELLO
-_setArgs $@
-main
-printHeader BYE
+function _exit()
+{
+  printHeader ERROR
+  exit $1
+}
+
+
+main $@
