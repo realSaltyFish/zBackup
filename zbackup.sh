@@ -39,7 +39,10 @@ function snapshot()
   for DATASET in $DATASETS
   do
     echo Creating snapshot $DATASET@$TODAY
-    zfs snapshot $DATASET@$TODAY
+    if [ -z $DRY_RUN ]
+    then
+      zfs snapshot $DATASET@$TODAY
+    fi
     if [ $? != 0 ]
     then
       output "Error creating snapshot." red
@@ -69,7 +72,10 @@ function send()
       output "Error reaching the target directory." red
       failed=true
     fi
-    zfs send -w $DATASET@$TODAY | gzip -c | split -b 10G -d - backup.zfs.gz_part
+    if [ -z $DRY_RUN ]
+    then
+      zfs send -w $DATASET@$TODAY | gzip -c | split -b 10G -d - backup.zfs.gz_part
+    fi
     if [ $? != 0 ]
     then
       output "Error exporting the dataset." red
@@ -93,17 +99,27 @@ function upload()
   for DATASET in $DATASETS
   do
     echo Uploading snapshot stored at $STORAGE/$DATASET/$TODAY/ to $DEST/$DATASET/$TODAY/
-    for f in $(ls $STORAGE/$DATASET/$TODAY)
-    do
-      rclone copy $STORAGE/$DATASET/$TODAY/$f $DEST/$DATASET/$TODAY/ -P --onedrive-chunk-size=240M
-      if [ $? != 0 ]
+    if [ -z $DRY_RUN ]
+    then
+      files=$(ls $STORAGE/$DATASET/$TODAY)
+      if [ $? -ne 0 ]
       then
-        output "Error uploading $f" red
+        output "Error reaching directory $STORAGE/$DATASET/$TODAY" red
         failed=true
-        this_failed=true
-        break
+        continue
       fi
-    done
+      for f in $files
+      do
+        rclone copy $STORAGE/$DATASET/$TODAY/$f $DEST/$DATASET/$TODAY/ -P --onedrive-chunk-size=240M
+        if [ $? != 0 ]
+        then
+          output "Error uploading $f" red
+          failed=true
+          this_failed=true
+          break
+        fi
+      done
+    fi
     if [ -z $this_failed ]
     then
       output "Uploaded snapshot $DATASET@$TODAY." green
@@ -187,7 +203,10 @@ function cleanSnapshots()
   for VICTIM in ${VICTIMS[*]}
   do
     echo Destroying $VICTIM...
-    zfs destroy $VICTIM
+    if [ -z $DRY_RUN ]
+    then
+      zfs destroy $VICTIM
+    fi
     if [ $? -ne 0 ]
     then
       output "Failed to destroy $VICTIM" red
@@ -290,7 +309,7 @@ function _setArgs(){
         DEST=$1
         if [ -z $(echo $DEST | grep -P '\w+:(\w+\/?)+') ]
         then
-          echo Invalid upload destination $DEST.
+          echo Invalid upload destination $DEST
           _exit 1
         fi
         ;;
@@ -298,7 +317,7 @@ function _setArgs(){
         shift
         CLEAN_POLICY=$1
         ;;
-      "-d" | "--date")
+      "--date")
         shift
         TODAY=$1
         if [ $(echo $TODAY | grep -P '^\d{8}$') ]
@@ -311,6 +330,10 @@ function _setArgs(){
         ;;
       "-y" | "--yes")
         AUTO_CONFIRM=true
+        ;;
+      "-d"|"--dry")
+        DRY_RUN=true
+        output "Dry run - will not actually do anything." yellow
         ;;
     esac
     shift
@@ -343,6 +366,7 @@ function unset_vars()
   unset DO_SNAPSHOT
   unset DATASETS
   unset DATASET
+  unset DRY_RUN
 }
 
 
@@ -354,7 +378,7 @@ function _help()
 
   Usage: zbackup.sh [-p|--pool POOL] [-d|--fs|--dataset DATASET1 DATASET2 ...] [-t|--storage STORAGE]
                     [-u|--upload DESTINATION] [-s|--snapshot] [-e|--export] [-c|--clean POLICY]
-                    [-d|--date DATE] [-y|--yes] [-h|--help] [--version]
+                    [--date DATE] [-y|--yes] [-d|--dry] [-h|--help] [--version]
   '
   exit 0
 }
