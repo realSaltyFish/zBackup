@@ -10,6 +10,10 @@ zBackup is a bash script that helps you backup your ZFS datasets. With the help 
 
 Currently, zBackup can create snapshots, export snapshots, upload exported files and clean old snapshots. During a single run, these tasks (if enabled) will be performed in the listed order.
 
+## Building
+
+Use the `build.sh` script to build zBackup. Currently the script lacks error checking mechanism. You are suggested to check its contents before executing it. The script generates the final product `build/zbackup.sh`.
+
 ## Requirements
 
 To use zBackup, you need to make sure that you have correctly setup ZFS and granted all permissions required to the user you are running zBackup with. These permissions include: `snapshot`, `mount`, `send` and `destroy`. Note that `mount` is not directly used. Rather, it is a prerequisite for  `destroy`.
@@ -56,7 +60,9 @@ zBackup uses `gzip` to compress the exported contents and uses `split` to split 
 
 Currently, zBackup cannot restore the backup for you. You may manually concatenate these files, decompress them and use `zfs receive` to restore it.
 
-> Warning: Please make sure that you do not store other files in this directory. Otherwise your files may get overwritten.
+zBackup calls `zfs send` with the `-w` flag so that encrypted datasets will be exported encrypted. There should be no need to disable this feature.
+
+> Warning: Please make sure that you do not store other files in the target directory. Otherwise your files may get overwritten.
 
 ## Uploading exported snapshots
 
