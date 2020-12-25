@@ -414,7 +414,7 @@ function _help()
   zBackup '$VERSION' written by Salty Fish
   A lightweight ZFS backup tool.
 
-  Usage: zbackup.sh [-p|--pool POOL] [-d|--fs|--dataset DATASET1 DATASET2 ...] [-t|--storage STORAGE]
+  Usage: zbackup.sh [-p|--pool POOL] [-f|--fs|--dataset DATASET1 DATASET2 ...] [-t|--storage STORAGE]
                     [-u|--upload DESTINATION] [-s|--snapshot] [-e|--export] [-c|--clean POLICY]
                     [--date DATE] [-y|--yes] [-d|--dry] [-h|--help] [--version]
   '
