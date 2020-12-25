@@ -2,10 +2,13 @@
 
 
 TODAY=$(date +%Y%m%d)
-VERSION=0.1.0
+VERSION=0.2.0
 
 
 function output()
+# A utility function. Prints content with assigned color.
+# $1: content to display
+# $2: color (one of red, green, yellow)
 {
   local CONTENT=$1
   local COLOR=$2
@@ -26,6 +29,8 @@ function output()
 
 
 function printHeader()
+# A utility function. Prints a header with assigned content in the middle.
+# $1: content in the middle
 {
   local CONTENT=$1
   echo -e '\n|'----------$CONTENT----------'|\n'
@@ -33,6 +38,8 @@ function printHeader()
 
 
 function snapshot()
+# Creates snapshots.
+# Using: $DATASETS, $TODAY, $DRY_RUN
 {
   printHeader SNAPSHOTTING
   local failed
@@ -59,14 +66,15 @@ function snapshot()
 
 
 function send()
+# Exports snapshots to assigned location.
+# Using: $DATASETS, $TODAY, $DRY_RUN, $STORAGE
 {
   printHeader EXPORTING
   local failed
   for DATASET in $DATASETS
   do
     echo Exporting snapshot $DATASET@$TODAY to $STORAGE/$DATASET/
-    mkdir -p $STORAGE/$DATASET/$TODAY
-    cd $STORAGE/$DATASET/$TODAY
+    mkdir -p $STORAGE/$DATASET/$TODAY && cd $STORAGE/$DATASET/$TODAY
     if [ $? != 0 ]
     then
       output "Error reaching the target directory." red
@@ -92,6 +100,9 @@ function send()
 
 
 function upload()
+# Uploads exported snapshots to assigned remote location.
+# Depends on: rclone
+# Using: $DATASETS, $TODAY, $DRY_RUN, $STORAGE, $DEST
 {
   printHeader UPLOADING
   local this_failed
@@ -101,7 +112,7 @@ function upload()
     echo Uploading snapshot stored at $STORAGE/$DATASET/$TODAY/ to $DEST/$DATASET/$TODAY/
     if [ -z $DRY_RUN ]
     then
-      files=$(ls $STORAGE/$DATASET/$TODAY)
+      local files=$(ls $STORAGE/$DATASET/$TODAY)
       if [ $? -ne 0 ]
       then
         output "Error reaching directory $STORAGE/$DATASET/$TODAY" red
@@ -135,17 +146,19 @@ function upload()
 
 
 function cleanSnapshots()
+# Cleans snapshots with the assigned policy.
+# Using: $DATASETS, $DRY_RUN, $AUTO_CONFIRM, $CLEAN_POLICY
 {
   printHeader CLEANING
   local MODE
   local ARG
   local VICTIMS=()
-  if [ $(echo $CLEAN_POLICY | grep -P "keep\d+") ]
+  if [ $(echo $CLEAN_POLICY | grep -P "keep\d+") ] # policy is keep*
   then
     MODE=number
     ARG=$(echo $CLEAN_POLICY | sed 's|keep||')
     echo Cleaning policy: Keep latest $ARG snapshots.
-  elif [ $(echo $CLEAN_POLICY | grep -P "before\d{8}") ]
+  elif [ $(echo $CLEAN_POLICY | grep -P "before\d{8}") ] # policy is before*
   then
     MODE=date
     ARG=$(echo $CLEAN_POLICY | sed 's|before||')
@@ -157,7 +170,9 @@ function cleanSnapshots()
   for DATASET in $DATASETS
   do
     echo Searching for snapshots of $DATASET...
+    # search for snapshots
     readarray -t -d '\n' _SNAPSHOTS <<< $(zfs list -t snapshot $DATASET | grep -P -o "^$DATASET@\d{8}\s+" | sed 's|\ ||')
+    # sort the snapshots
     IFS='\n'
     readarray SNAPSHOTS <<< $(sort -r <<< "${_SNAPSHOTS[*]}")
     unset IFS
@@ -234,13 +249,8 @@ function main()
       ;;
   esac
   printHeader HELLO
-  _setArgs $@
-  if [ $FS ]
-  then
-    DATASETS=$(printf "%s " "${FS[@]}")
-  else
-    DATASETS=$(zfs get -r zbackup:enabled $POOL | grep -P "^($POOL\/[^@|\s]+)\s*[^\s]+\s*true" | grep -o -P "^$POOL/[^\s]+")
-  fi
+  read_args $@
+  get_datasets
   echo Datasets to process: $DATASETS
   if [ $DO_SNAPSHOT ]
   then
@@ -262,7 +272,22 @@ function main()
 }
 
 
-function _setArgs(){
+function get_datasets()
+# Finds all datasets to process and store in the global variable $DATASETS.
+# Using: $FS, $POOL
+{
+  if [ $FS ]
+  then
+    DATASETS=$(printf "%s " "${FS[@]}")
+  else
+    DATASETS=$(zfs get -r zbackup:enabled $POOL | grep -P -o "^$POOL\/[^@\s]+(?=\s+[\w:]+\s+true)")
+  fi
+}
+
+
+function read_args()
+# Reads and parses all arguments. Should be called only once from main().
+{
   while [ "${1:-}" != "" ]
   do
     case "$1" in
@@ -275,17 +300,28 @@ function _setArgs(){
       "-p" | "--pool")
         shift
         POOL=$1
+        zfs list $POOL > /dev/null
+        if [ $? -ne 0 ]
+        then
+          output "Invalid pool $POOL" red
+          _exit 1
+        fi
         ;;
       "-f" | "--dataset" | "--fs")
         FS=()
-        while [[ $(echo $2 | grep -P "^[^-]") ]]
+        while [[ $(echo $2 | grep -P "^[^-]") ]] # not another argument
         do
           if [ $(echo $2 | grep -P -o "^\w+\/\w+$") ]
           then
-            FS+=($2)
-          else
-            echo Invalid dataset $2 ignored.
+            zfs list $2 > /dev/null
+            if [ $? -eq 0 ]
+            then
+              FS+=($2)
+              shift
+              continue
+            fi
           fi
+          echo Invalid dataset $2 ignored.
           shift
         done
         ;;
@@ -331,7 +367,7 @@ function _setArgs(){
       "-y" | "--yes")
         AUTO_CONFIRM=true
         ;;
-      "-d"|"--dry")
+      "-d" | "--dry")
         DRY_RUN=true
         output "Dry run - will not actually do anything." yellow
         ;;
@@ -356,6 +392,7 @@ function _setArgs(){
 
 
 function unset_vars()
+# Unsets all global variables used. Should be called only once from main().
 {
   unset AUTO_CONFIRM
   unset DEST
@@ -371,6 +408,7 @@ function unset_vars()
 
 
 function _help()
+# Prints the help message.
 {
   echo '
   zBackup '$VERSION' written by Salty Fish
@@ -385,6 +423,7 @@ function _help()
 
 
 function _version()
+# Prints the version message.
 {
   echo zBackup $VERSION written by Salty Fish
   exit 0
@@ -392,6 +431,8 @@ function _version()
 
 
 function _exit()
+# Prints the error header and exits.
+# $1: exit code
 {
   printHeader ERROR
   exit $1
